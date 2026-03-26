@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nokia 3310 MP3 to Composer (10s Limit)</title>
+    <style>
+        :root { --lcd: #87977a; --case: #2c3e50; --dark: #1a1a1a; }
+        
+        body { 
+            background: #121212; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center;
+            min-height: 100vh; 
+            margin: 0;
+            font-family: 'Courier New', monospace; 
+            color: white; 
+        }
+
+        .upload-area {
+            background: #333;
+            padding: 15px;
+            border-radius: 12px;
+            margin-bottom: 25px;
+            width: 300px;
+            text-align: center;
+            border: 2px dashed #555;
+        }
+
+        .nokia-3310 {
+            background: var(--case);
+            width: 310px;
+            padding: 30px 20px;
+            border-radius: 45px;
+            border: 5px solid #34495e;
+            box-shadow: 0 20px 0 #1a252f, 0 30px 50px rgba(0,0,0,0.5);
+        }
+
+        .lcd {
+            background: var(--lcd);
+            height: 150px;
+            border: 10px solid #222;
+            border-radius: 5px;
+            padding: 10px;
+            color: var(--dark);
+            display: flex;
+            flex-direction: column;
+            box-shadow: inset 0 0 15px rgba(0,0,0,0.3);
+        }
+
+        #status-text { font-size: 0.7rem; font-weight: bold; text-align: center; border-bottom: 1px solid var(--dark); padding-bottom: 4px; }
+        #note-name { font-size: 2.5rem; font-weight: bold; text-align: center; margin: 10px 0; }
+        
+        #melody-output {
+            width: 100%;
+            background: rgba(0,0,0,0.05);
+            border: 1px dashed var(--dark);
+            font-family: inherit;
+            font-weight: bold;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            text-align: center;
+            padding: 5px 0;
+            outline: none;
+        }
+
+        .timer-bar {
+            font-size: 0.6rem;
+            text-align: right;
+            margin-top: auto;
+            font-weight: bold;
+        }
+
+        .keypad {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-top: 25px;
+        }
+
+        .key {
+            background: linear-gradient(145deg, #444, #222);
+            color: #eee;
+            border: none;
+            padding: 15px 5px;
+            border-radius: 15px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px #000;
+            font-size: 0.9rem;
+        }
+
+        .key:active { transform: translateY(3px); box-shadow: 0 1px #000; background: #555; }
+        .key.play { background: #27ae60; box-shadow: 0 4px #1e8449; grid-column: span 3; margin-top: 10px; }
+
+        input[type="file"] { font-size: 0.7rem; margin-top: 10px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div class="upload-area">
+        <strong>1. MUAT NAIK LAGU (.MP3)</strong><br>
+        <input type="file" id="audio-file" accept="audio/*">
+    </div>
+
+    <div class="nokia-3310">
+        <div class="lcd" id="lcd-screen">
+            <div id="status-text">READY TO TRANSLATE</div>
+            <div id="note-name">-</div>
+            <input type="text" id="melody-output" readonly placeholder="RESULT CODE">
+            <div class="timer-bar" id="timer">LIMIT: 10.0s</div>
+        </div>
+
+        <div class="keypad">
+            <button class="key" onclick="startTranslation()" id="start-btn">START</button>
+            <button class="key" onclick="location.reload()">RESET</button>
+            <button class="key" onclick="copyResult()">COPY</button>
+            <button class="key play" onclick="playNokiaVersion()">▶ PLAY NOKIA BEEP</button>
+        </div>
+    </div>
+
+    <script>
+        let audioCtx;
+        let analyser;
+        let source;
+        let isProcessing = false;
+        let timeLeft = 10.0;
+        let timerInterval;
+
+        const nokiaNotes = [
+            { f: 261.63, n: 'A' }, { f: 293.66, n: 'B' }, { f: 329.63, n: 'C' },
+            { f: 349.23, n: 'D' }, { f: 392.00, n: 'E' }, { f: 440.00, n: 'F' },
+            { f: 493.88, n: 'G' }, { f: 523.25, n: '1' }, { f: 587.33, n: '2' },
+            { f: 659.25, n: '3' }, { f: 698.46, n: '4' }, { f: 783.99, n: '5' },
+            { f: 880.00, n: '6' }
+        ];
+
+        async function startTranslation() {
+            const fileInput = document.getElementById('audio-file');
+            if (!fileInput.files[0]) return alert("Sila muat naik fail MP3 dulu!");
+
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+            document.getElementById('status-text').innerText = "LOADING AUDIO...";
+            document.getElementById('start-btn').disabled = true;
+            
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const buffer = await audioCtx.decodeAudioBuffer(e.target.result);
+                processAudio(buffer);
+            };
+            reader.readAsArrayBuffer(fileInput.files[0]);
+        }
+
+        function processAudio(buffer) {
+            source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 2048;
+
+            source.connect(analyser);
+            analyser.connect(audioCtx.destination);
+            
+            source.start();
+            isProcessing = true;
+            document.getElementById('status-text').innerText = "TRANSLATING...";
+            
+            // Start Timer
+            timeLeft = 10.0;
+            timerInterval = setInterval(() => {
+                timeLeft -= 0.1;
+                document.getElementById('timer').innerText = `LIMIT: ${timeLeft.toFixed(1)}s`;
+                if (timeLeft <= 0) stopEverything();
+            }, 100);
+
+            // Auto stop after 10s
+            setTimeout(() => { stopEverything(); }, 10000);
+
+            analyzePitch();
+        }
+
+        function analyzePitch() {
+            if (!isProcessing) return;
+
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Float32Array(bufferLength);
+            analyser.getFloatFrequencyData(dataArray);
+
+            let maxVal = -Infinity;
+            let maxIndex = -1;
+
+            for (let i = 0; i < bufferLength; i++) {
+                if (dataArray[i] > maxVal) {
+                    maxVal = dataArray[i];
+                    maxIndex = i;
+                }
+            }
+
+            const freq = maxIndex * audioCtx.sampleRate / analyser.fftSize;
+
+            if (maxVal > -65) { // Sensitivity threshold
+                const closest = nokiaNotes.reduce((prev, curr) => 
+                    Math.abs(curr.f - freq) < Math.abs(prev.f - freq) ? curr : prev
+                );
+
+                const output = document.getElementById('melody-output');
+                const lastNote = output.value.slice(-1);
+
+                if (closest.n !== lastNote) {
+                    document.getElementById('note-name').innerText = closest.n;
+                    output.value += closest.n;
+                }
+            }
+            requestAnimationFrame(analyzePitch);
+        }
+
+        function stopEverything() {
+            if (isProcessing) {
+                isProcessing = false;
+                source.stop();
+                clearInterval(timerInterval);
+                document.getElementById('status-text').innerText = "TIME'S UP! (10s)";
+                document.getElementById('timer').innerText = "LIMIT: 0.0s";
+                document.getElementById('start-btn').disabled = false;
+            }
+        }
+
+        function playNokiaVersion() {
+            const code = document.getElementById('melody-output').value;
+            if (!code) return alert("Tiada kod dihasilkan!");
+
+            let i = 0;
+            const playNext = () => {
+                if (i >= code.length) return;
+                const char = code[i].toUpperCase();
+                const note = nokiaNotes.find(n => n.n === char);
+                
+                if (note) {
+                    const osc = audioCtx.createOscillator();
+                    const g = audioCtx.createGain();
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(note.f, audioCtx.currentTime);
+                    g.gain.setValueAtTime(0.08, audioCtx.currentTime);
+                    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.2);
+                    osc.connect(g);
+                    g.connect(audioCtx.destination);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.2);
+                }
+                i++;
+                setTimeout(playNext, 200); // Tempo main semula
+            };
+            playNext();
+        }
+
+        function copyResult() {
+            const output = document.getElementById('melody-output');
+            output.select();
+            document.execCommand('copy');
+            alert("Kod Nokia disalin: " + output.value);
+        }
+    </script>
+</body>
+</html>
