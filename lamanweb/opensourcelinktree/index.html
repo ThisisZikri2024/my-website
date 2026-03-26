@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LinkTree Generator | Final Fix</title>
+    <style>
+        /* Generator asal - Wallpaper Merah Kekal */
+        body {
+            margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; background: #b22222; 
+        }
+        .container { width: 90%; max-width: 400px; margin-top: 50px; text-align: center; }
+        
+        /* ADMIN UI */
+        #admin-wrapper { display: none; margin-bottom: 25px; }
+        .panel-kawalan { background: white; padding: 20px; border-radius: 20px; text-align: left; color: #333; box-shadow: 0 15px 40px rgba(0,0,0,0.5); }
+        input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
+        .btn-black { width: 100%; padding: 12px; background: #111; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+        .btn-gen { width: 100%; padding: 12px; background: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; margin-top: 10px; }
+
+        /* PREVIEW BUTTONS */
+        .slot-container { display: flex; align-items: center; margin: 15px 0; gap: 10px; }
+        .slot-pautan {
+            flex-grow: 1;
+            background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 50px;
+            padding: 15px; color: white; font-weight: bold; cursor: pointer;
+            text-decoration: none; display: block; text-align: center;
+        }
+        .btn-delete {
+            background: #ff4d4d; color: white; border: none; 
+            width: 40px; height: 40px; border-radius: 50%; 
+            cursor: pointer; font-weight: bold; font-size: 14px;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .suis-mode { position: fixed; bottom: 20px; background: white; color: black; padding: 10px 25px; border-radius: 30px; cursor: pointer; font-weight: bold; z-index: 100; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+    </style>
+</head>
+<body id="master-bg">
+
+    <div class="container">
+        <div id="admin-wrapper">
+            <div class="panel-kawalan">
+                <label><b>1. Wallpaper Locked (PNG):</b></label>
+                <input type="file" accept="image/png" onchange="prosesGambar(this)">
+                <hr>
+                <label><b>2. Tambah Pautan:</b></label>
+                <input type="text" id="nama-p" placeholder="Nama Pautan (cth: Facebook)">
+                <input type="text" id="url-p" placeholder="URL (cth: https://facebook.com)">
+                <button class="btn-black" onclick="simpanPautan()">Simpan</button>
+                <hr>
+                <label><b>3. Nama Fail:</b></label>
+                <input type="text" id="fail-n" placeholder="Nama Fail (cth: my-links)">
+                <button class="btn-gen" onclick="generateLocked()">Generate Minimalist .html</button>
+            </div>
+        </div>
+
+        <h2 style="color:white; opacity: 0.8;">Preview Generator</h2>
+        <div id="senarai"></div>
+    </div>
+
+    <div class="suis-mode" onclick="tukarMod()">MOD: <span id="txt-mod">GUEST</span></div>
+
+    <script>
+        let modAdmin = false;
+        let pautanData = JSON.parse(localStorage.getItem('final_links_v2')) || [];
+        let lockedWallpaper = localStorage.getItem('final_bg_v2') || '#b22222';
+
+        function tukarMod() {
+            modAdmin = !modAdmin;
+            document.getElementById('txt-mod').innerText = modAdmin ? "ADMIN" : "GUEST";
+            document.getElementById('admin-wrapper').style.display = modAdmin ? "block" : "none";
+            render();
+        }
+
+        function prosesGambar(input) {
+            const file = input.files[0];
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const scale = 1200 / img.width;
+                    canvas.width = 1200; canvas.height = img.height * scale;
+                    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+                    lockedWallpaper = canvas.toDataURL('image/jpeg', 0.8);
+                    localStorage.setItem('final_bg_v2', lockedWallpaper);
+                    alert("Wallpaper Disimpan!");
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function simpanPautan() {
+            let n = document.getElementById('nama-p').value;
+            let u = document.getElementById('url-p').value;
+            if(n && u) {
+                if(!u.startsWith('http')) u = 'https://' + u;
+                pautanData.push({ n, u });
+                localStorage.setItem('final_links_v2', JSON.stringify(pautanData));
+                render();
+                document.getElementById('nama-p').value = "";
+                document.getElementById('url-p').value = "";
+            }
+        }
+
+        function padamPautan(index) {
+            pautanData.splice(index, 1);
+            localStorage.setItem('final_links_v2', JSON.stringify(pautanData));
+            render();
+        }
+
+        function render() {
+            const s = document.getElementById('senarai');
+            s.innerHTML = '';
+            pautanData.forEach((d, i) => {
+                const container = document.createElement('div');
+                container.className = 'slot-container';
+
+                const a = document.createElement('a');
+                a.className = 'slot-pautan';
+                a.innerText = d.n;
+                a.href = d.u;
+                a.target = "_blank";
+                
+                if(modAdmin) {
+                    a.onclick = (e) => e.preventDefault();
+                    const btnDel = document.createElement('button');
+                    btnDel.className = 'btn-delete';
+                    btnDel.innerText = 'X';
+                    btnDel.onclick = () => padamPautan(i);
+                    container.appendChild(a);
+                    container.appendChild(btnDel);
+                } else {
+                    container.appendChild(a);
+                }
+                
+                s.appendChild(container);
+            });
+        }
+
+        function generateLocked() {
+            const fName = document.getElementById('fail-n').value || 'index';
+            const dataEnc = btoa(unescape(encodeURIComponent(JSON.stringify(pautanData))));
+            const bgStyle = lockedWallpaper.startsWith('data:image') ? `url('${lockedWallpaper}')` : lockedWallpaper;
+
+            const template = `
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { margin:0; padding:0; font-family:sans-serif; display:flex; flex-direction:column; align-items:center; min-height:100vh; background: ${bgStyle} no-repeat center center fixed; background-size: cover; }
+        .container { width:90%; max-width:400px; margin-top:100px; text-align:center; }
+        .btn { background:rgba(255,255,255,0.2); backdrop-filter:blur(15px); -webkit-backdrop-filter:blur(15px); border:1px solid rgba(255,255,255,0.3); border-radius:50px; padding:18px; margin:15px 0; color:white; font-weight:bold; cursor:pointer; text-align:center; text-decoration:none; display:block; transition:0.3s; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        .btn:hover { transform: scale(1.05); background:rgba(255,255,255,0.3); }
+    </style>
+</head>
+<body>
+    <div class="container" id="v"></div>
+    <script>
+        const _d = JSON.parse(decodeURIComponent(escape(atob('${dataEnc}'))));
+        const _v = document.getElementById('v');
+        _d.forEach(item => {
+            const a = document.createElement('a'); a.className = 'btn'; a.innerText = item.n; a.href = item.u; a.target = "_blank";
+            _v.appendChild(a);
+        });
+    <\/script>
+</body>
+</html>`;
+
+            const blob = new Blob([template], { type: 'text/html' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = fName + ".html";
+            link.click();
+        }
+
+        window.onload = render;
+    </script>
+</body>
+</html>
